@@ -1,23 +1,84 @@
 <Query Kind="Program">
+  <NuGetReference>DotNetEx.Reactive</NuGetReference>
   <Namespace>System</Namespace>
   <Namespace>System.Collections.Generic</Namespace>
   <Namespace>System.Net</Namespace>
+  <Namespace>System.Reactive.Linq</Namespace>
 </Query>
 
 void Main()
 {
 	
 	//StockData();
-	TestBollinger();
+	//GetStockPriceWithStats("msft").Dump();
+	StreamStockPrices();
 }
 
-void TestBollinger()
+IEnumerable<DataWithStats> GetStockPriceWithStats(string symbol)
 {
-	var data = GetTestData().ToList();
+	var data = GetStockPrices(symbol).ToList();
 	var dataWithAvgs = CreateMovingAverage(data);
-	CreateStdv(dataWithAvgs);
-	//data.Dump();
+	return CreateStdv(dataWithAvgs);
 }
+
+void StreamStockPrices()
+{
+	var eventSource = Observable.Generate(
+			//(IEnumerator<Tuple<DateTime,string, string>>)events.GetEnumerator(),
+			GetStockPriceWithStats("msft").GetEnumerator(),
+			s => s.MoveNext(),
+			s => s, //result sectorWx
+			s => s.Current, // the data
+			s => TimeSpan.FromMilliseconds(100) // the timing, could be an absolute time or a timespan
+			);
+
+
+	var dc = new DumpContainer().Dump();
+	eventSource.Subscribe((data) =>
+	{
+		var d= data as DataWithStats;
+		
+		dc.Content = string.Concat("price " , d.Close, " 10dayAvg: " , d.AdjClose);
+//		Console.WriteLine("{0}@{1} ", data );
+//		if (data.Price == 20)
+//			Console.WriteLine("************");
+	});
+}
+
+IEnumerator<HistoricalStockWithR> GetASampleStockPrice(string symbol)
+{
+	var pricesInumerator = GetStockPrices(symbol).GetEnumerator();
+	return pricesInumerator;
+}
+
+class DateAndPrice
+{
+	public DateTime Date { get; set; }
+	public Decimal Price { get; set; }
+}
+
+IEnumerable<DateAndPrice> GetSampleStockPrice(int maxSignalCount)
+{
+
+	var i = 0;
+	var startDate = DateTime.Now.AddDays(-100);
+	while (i < maxSignalCount)
+	{
+		yield return new DateAndPrice() { Date = startDate.AddDays(i), Price = (decimal)(i + 0.5) };
+		//System.Threading.Thread.Sleep(1000/pingsPerSec);
+		i++;
+	}
+
+}
+
+
+//void TestBollinger()
+//{
+//	var data = GetTestData().ToList();
+//	var dataWithAvgs = CreateMovingAverage(data);
+//	CreateStdv(dataWithAvgs);
+//	//data.Dump();
+//}
 
 #region Moving Averages
 
@@ -66,7 +127,7 @@ double? GetMovingAverage(int currentRowNo, int days, List<HistoricalStockWithR> 
 
 #region StandardDeviations
 
-void CreateStdv(List<HistoricalStockWithR> data)
+IEnumerable<DataWithStats> CreateStdv(List<HistoricalStockWithR> data)
 {
 	var dataWithDevSquared = data.Select (p => //new {Data = 
 		new 
@@ -137,7 +198,7 @@ void CreateStdv(List<HistoricalStockWithR> data)
 		
 	//Calculating Stochastic oscillator using this: http://www.investopedia.com/terms/s/stochasticoscillator.asp
 	var dataWithStochasticAvg =  dataWithStd.Select (p => //new {Data = 
-		new 
+		new DataWithStats
 			{
 				RowNo=p.RowNo,
 				AdjClose=p.AdjClose,
@@ -166,9 +227,40 @@ void CreateStdv(List<HistoricalStockWithR> data)
 				High14= p.High14,
 				Low14=p.Low14
 		} );
-	dataWithStochasticAvg.Dump();
+	return dataWithStochasticAvg;
 }
 
+
+public class DataWithStats
+{
+	public int RowNo { get; set; }
+	public double AdjClose { get; set; }
+	public double Close { get; set; }
+	public DateTime Date { get; set; }
+	public double High { get; set; }
+	public double Low { get; set; }
+	public double Open { get; set; }
+	public double R { get; set; }
+	public double Volume { get; set; }
+	public double? Avg5 { get; set; }
+	public double? Avg10 { get; set; }
+	public double? Avg20 { get; set; }
+	public double? Avg30 { get; set; }
+	public double? Avg60 { get; set; }
+	public double? Avg90 { get; set; }
+	public double? Std5 { get; set; }
+	public double? Std10 { get; set; }
+	public double? Std20 { get; set; }
+	public double? Std30 { get; set; }
+	public double? Std60 { get; set; }
+	public double? Std90 { get; set; }
+	public double? Stochastic14 { get; set; }
+	public double? Stochastic14Avg3 { get; set; }
+	public double? Stochastic14DiffFromAvg3 { get; set; }
+	public double? High14 { get; set; }
+	public double? Low14 { get; set; }
+
+}
 double? GetStd(int currentRowNo, int days, List<HistoricalStockWithR> data)
 {
 	double? result = null;
@@ -182,11 +274,11 @@ double? GetStd(int currentRowNo, int days, List<HistoricalStockWithR> data)
 #endregion
 
 
-IEnumerable<HistoricalStockWithR> GetTestData(){
+IEnumerable<HistoricalStockWithR> GetStockPrices(string symbol){
    	var fromDate = DateTime.Now.AddDays(-180);//must be at least 30 days ago
    	var toDate = DateTime.Now;
 	int i = 1;
-	return HistoricalStockDownloader.DownloadData("msft", fromDate, toDate)
+	return HistoricalStockDownloader.DownloadData(symbol, fromDate, toDate)
 	.OrderBy (p => p.Date )
 	.Select(p=>new HistoricalStockWithR
 	{
