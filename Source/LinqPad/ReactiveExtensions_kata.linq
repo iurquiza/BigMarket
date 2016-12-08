@@ -37,7 +37,7 @@ void TestObservableInterval()
 //            select DateTime.Now;
 
 	var clock = Observable.Interval(TimeSpan.FromSeconds(1))
-		.Select((x)=> {return new DateAndPrice(){Date= DateTime.Now, Price=x };})
+		.Select((x)=> {return new DateAndPrice(){Date= DateTime.Now, Price=(decimal)x };})
 		//.Select(x=> GetSampleStockPrice(3, 10, 50))
 		;
 clock.Subscribe(datePrice =>
@@ -96,7 +96,7 @@ void SampleStockPriceHistoricalScheduler()
         s => s.MoveNext(), 
         s => s, //result sectorWx
         s => s.Current, // the data
-        s => TimeSpan.FromMilliseconds(500) // the timing, could be an absolute time or a timespan
+        s => TimeSpan.FromMilliseconds(50) // the timing, could be an absolute time or a timespan
 		); 
 
     eventSource.Subscribe((data)=> {Console.WriteLine("{0}@{1} ", data.Date.ToShortDateString(), data.Price);
@@ -116,7 +116,7 @@ IEnumerable<DateAndPrice> GetSampleStockPrice(int maxSignalCount){
 	var startDate = DateTime.Now.AddDays(-100);
 	while(i<maxSignalCount)
 	{
-		yield return new DateAndPrice(){Date=startDate.AddDays(i), Price=i+1 };
+		yield return new DateAndPrice(){Date=startDate.AddDays(i), Price=(decimal)(i+ 0.5) };
 		//System.Threading.Thread.Sleep(1000/pingsPerSec);
 		i++;
 	}
