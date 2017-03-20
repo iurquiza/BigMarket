@@ -8,10 +8,10 @@
 
 void Main()
 {
-	
+	Util.RawHtml("<style>div{font-weight:bold;color:blue;}</style>").Dump();
 	//StockData();
 	//GetStockPriceWithStats("msft").Dump();
-	StreamStockPrices();
+	StreamStockPrices("msft");
 }
 
 IEnumerable<DataWithStats> GetStockPriceWithStats(string symbol)
@@ -21,11 +21,11 @@ IEnumerable<DataWithStats> GetStockPriceWithStats(string symbol)
 	return CreateStdv(dataWithAvgs);
 }
 
-void StreamStockPrices()
+void StreamStockPrices(string symbol)
 {
 	var eventSource = Observable.Generate(
 			//(IEnumerator<Tuple<DateTime,string, string>>)events.GetEnumerator(),
-			GetStockPriceWithStats("msft").GetEnumerator(),
+			GetStockPriceWithStats(symbol).GetEnumerator(),
 			s => s.MoveNext(),
 			s => s, //result sectorWx
 			s => s.Current, // the data
@@ -38,7 +38,7 @@ void StreamStockPrices()
 	{
 		var d= data as DataWithStats;
 		
-		dc.Content = string.Concat("price " , d.Close, " 10dayAvg: " , d.AdjClose);
+		dc.Content = string.Concat("price " , d.Close, " 10dayAvg: " , d.Avg10, " date: ", d.Date);
 //		Console.WriteLine("{0}@{1} ", data );
 //		if (data.Price == 20)
 //			Console.WriteLine("************");
