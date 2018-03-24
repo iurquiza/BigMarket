@@ -59,6 +59,7 @@ void Main()
 		"RHE",
 		"UMH", //Heard about it from https://seekingalpha.com/article/4156782-opportunity-earn-35-percent-returns-recession-resilient-high-yield-high-growth-reit?app=1&isDirectRoadblock=true
 		"AABA", //exposure to alibaba and other china stock
+		"ATVI",
 	};
 	results.AddRange(GetCleanData(symbols));
 	
@@ -86,7 +87,7 @@ void Main()
 			r.FollowerCount,	
 		})
 		.OrderByDescending(r => r.Avg_Pct)
-		.Dump();
+		.Dump(true);
 		
 		interim 
 			.Where(r => r.Low_pct>0 && r.Low_pct*2<r.High_pct)
