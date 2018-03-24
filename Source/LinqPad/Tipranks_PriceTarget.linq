@@ -7,9 +7,10 @@
 
 void Main()
 {
-	var results = new List<(string, double, double, long, double)>();
+	var results = new List<(string, double, double, long, double, int)>();
 	var symbols = new List<string> {
 		"AAXN",
+		"ADBE",
 		"MSFT",
 		"AMD",
 		"TTD",
@@ -52,7 +53,12 @@ void Main()
 		"TLND",
 		"OKTA",
 		"FGEN",
-		"HSY"
+		"HSY",
+		"MDGL",
+		"NTNX",
+		"RHE",
+		"UMH", //Heard about it from https://seekingalpha.com/article/4156782-opportunity-earn-35-percent-returns-recession-resilient-high-yield-high-growth-reit?app=1&isDirectRoadblock=true
+		"AABA", //exposure to alibaba and other china stock
 	};
 	results.AddRange(GetCleanData(symbols));
 	
@@ -64,7 +70,8 @@ void Main()
 			EstHigh=r.Item3,
 			FollowerCount = r.Item4, 
 			EstLow= r.Item5,
-			EstAvg = (r.Item3+r.Item5)/2
+			EstAvg = (r.Item3+r.Item5)/2, 
+			EstCount = r.Item6
 		})
 		.Select(r => new {
 			r.Symbol,
@@ -75,6 +82,7 @@ void Main()
 			Low_pct = Math.Round((r.EstLow-r.Price)/r.Price*100, 2),
 			High_pct= Math.Round((r.EstHigh-r.Price)/r.Price*100, 2),
 			Avg_Pct = Math.Round((r.EstAvg-r.Price)/r.Price*100, 2),
+			r.EstCount,
 			r.FollowerCount,	
 		})
 		.OrderByDescending(r => r.Avg_Pct)
@@ -88,9 +96,9 @@ void Main()
 
 
 
-List<(string symbol, double lastPrice, double estHigh, long followerCount, double estLow)> GetCleanData(List<string> symbols)
+List<(string symbol, double lastPrice, double estHigh, long followerCount, double estLow, int NumberOfEstimates)> GetCleanData(List<string> symbols)
 {
-	var results = new List<(string symbol, double lastPrice, double estHigh, long followerCount, double estLow)>();
+	var results = new List<(string symbol, double lastPrice, double estHigh, long followerCount, double estLow, int NumberOfEstimates)>();
 	foreach (var symbol in symbols)
 	{
 		results.Add(Util.Cache(() => { return GetFreshData(symbol); }, symbol));
@@ -98,21 +106,21 @@ List<(string symbol, double lastPrice, double estHigh, long followerCount, doubl
 	return results;
 }
 
-(string symbol, double lastPrice, double estHigh, long followerCount, double estLow)  GetFreshData(string symbol)
+(string symbol, double lastPrice, double estHigh, long followerCount, double estLow, int NumberOfEstimates)  GetFreshData(string symbol)
 {
 	var data = GetTipRanksData(symbol).Result;
-	var from_cache = true;
+	
 	var lastPrice = data.Prices.Last().P;
-	if (!from_cache)
-		lastPrice.Dump("last price " + symbol);
+	lastPrice.Dump("last price " + symbol);
 	double highTarget = 0.0, lowTarget = 0.0;
+	int numberOfEstimates=data.Experts.Select(x=> x.Ratings.Where(r => r.PriceTarget != null)).Count();
 	var target = data.PtConsensus.Where(pc => pc.High != null).FirstOrDefault();
 	if (target != null)
 	{
 		highTarget = target.High.Value;
 		lowTarget = data.PtConsensus.Where(pc => pc.Low != null).Average(pc => pc.Low.Value);
 	}
-	return (symbol, lastPrice, highTarget, data.FollowerCount, lowTarget);
+	return (symbol, lastPrice, highTarget, data.FollowerCount, lowTarget, numberOfEstimates);
 }
 
 async Task<Welcome> GetTipRanksData(string symbol)
