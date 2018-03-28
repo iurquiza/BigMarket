@@ -5,6 +5,7 @@
   <Namespace>System.Globalization</Namespace>
 </Query>
 
+DumpContainer dc = new DumpContainer().Dump();
 void Main()
 {
 	//GetFreshData("FGEN").Dump();
@@ -15,8 +16,24 @@ void Main()
 	
 	var results = new List<MyModel>();
 	results.AddRange(GetCleanData(symbols));
+
+	results
+		.Select(r => new {
+			r.Symbol,
+			r.Price,
+			r.EstLow,
+			r.EstHigh,
+			r.EstAvg,
+			r.EstCount,
+			r.PctLow,
+			r.PctHigh,
+			r.PctAvg,
+			r.FollowerCount,
+			LastUpdated = r.Experts.Where(e => e!=null).Select(e => e.LastUpdated).FirstOrDefault(), 
+			MostRecentTarget = r.Experts.Where(e => e!=null && e.Ratings!=null).Select(e => e.Ratings.Select(ra => ra.Target).FirstOrDefault()).FirstOrDefault(), 
+		})
 		
-	results.Dump(2);
+		.Dump("all", true);
 
 
 	results.Where(r => r.Experts.Any(e => e.LastUpdated >= DateTime.Today.AddDays(-30)))
@@ -128,7 +145,7 @@ List<string> GetSymbolsFromCsv(string filePath)
 	var data = GetTipRanksData(symbol).Result;
 	
 	var lastPrice = data.Prices.Last().P;
-	lastPrice.Dump("last price " + symbol);
+	dc.Content =  "fetched fresh data for " + symbol + " - last price: " + lastPrice.ToString();
 	double highTarget = 0.0, lowTarget = 0.0;
 	int numberOfEstimates=data.Experts.Select(x=> x.Ratings.Where(r => r.PriceTarget != null)).Count();
 	var target = data.PtConsensus.Where(pc => pc.High != null).FirstOrDefault();
