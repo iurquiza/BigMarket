@@ -7,99 +7,99 @@
 
 void Main()
 {
-	var results = new List<(string, double, double, long, double, int)>();
-	var symbols = new List<string> {
-		"AAXN",
-		"ADBE",
-		"MSFT",
-		"AMD",
-		"TTD",
-		"FICO",
-		"AMZN",
-		"INTC",
-		"NFLX",
-		"GOOGL",
-		"MU",
-		"RDFN",
-		"HD",
-		"ISRG",
-		"NKTR",
-		"STAG",
-		"JD",
-		"APLE",
-		"MAR",
-		"CME",
-		"JNJ",
-		"ABT",
-		"APPF",
-		"APPN",
-		"MA",
-		"WM",
-		"PEP",
-		"DIS",
-		"ANET",
-		"MB",
-		"SHOP",
-		"PYPL",
-		"MELI",
-		"MTN",
-		"SQ",
-		"BIDU",
-		"SPLK",
-		"KURA",
-		"SRNE",
-		"MMM",
-		"LOPE",
-		"TLND",
-		"OKTA",
-		"FGEN",
-		"HSY",
-		"MDGL",
-		"NTNX",
-		"RHE",
-		"UMH", //Heard about it from https://seekingalpha.com/article/4156782-opportunity-earn-35-percent-returns-recession-resilient-high-yield-high-growth-reit?app=1&isDirectRoadblock=true
-		"AABA", //exposure to alibaba and other china stock
-		"ATVI",
-	};
+	//GetFreshData("FGEN").Dump();
+	//return;
+	
+	var cwd = new FileInfo(Util.CurrentQueryPath).Directory.FullName;
+	var symbols = GetSymbolsFromCsv(cwd + @"\data\watchlist.csv");
+	
+	var results = new List<MyModel>();
 	results.AddRange(GetCleanData(symbols));
-	
-	
-	var interim = results
-		.Select(r => new {
-			Symbol=r.Item1,
-			Price=r.Item2,
-			EstHigh=r.Item3,
-			FollowerCount = r.Item4, 
-			EstLow= r.Item5,
-			EstAvg = (r.Item3+r.Item5)/2, 
-			EstCount = r.Item6
-		})
-		.Select(r => new {
-			r.Symbol,
-			r.Price,
-			r.EstLow,
-			r.EstHigh,
-			r.EstAvg,
-			Low_pct = Math.Round((r.EstLow-r.Price)/r.Price*100, 2),
-			High_pct= Math.Round((r.EstHigh-r.Price)/r.Price*100, 2),
-			Avg_Pct = Math.Round((r.EstAvg-r.Price)/r.Price*100, 2),
-			r.EstCount,
-			r.FollowerCount,	
-		})
-		.OrderByDescending(r => r.Avg_Pct)
-		.Dump(true);
 		
-		interim 
-			.Where(r => r.Low_pct>0 && r.Low_pct*2<r.High_pct)
+	results.Dump(2);
+
+
+	results.Where(r => r.Experts.Any(e => e.LastUpdated >= DateTime.Today.AddDays(-30)))
+		.Select(r => new
+		{
+			
+			Prices = r.Experts.Where(e => e.LastUpdated!=null && e.LastUpdated>=DateTime.Today.AddDays(-30)).Select(e => new {
+				Ratings = e.Ratings.Select(x => new {
+					Symbol=r.Symbol.Dump(),
+					r.Price,
+					e.TargetPrice,
+					e.Stars,
+					e.SuccessRate, 
+					e.AvgReturn,
+					e.TotalRecomendations,
+					Date = x.Date.Date.ToShortDateString(),
+					PctDelta = !e.TargetPrice.HasValue ? 0 : Math.Round((e.TargetPrice.Value - r.Price) / r.Price * 100, 2),
+					r.PctLow,
+					r.PctHigh,
+					r.PctAvg,
+					Title = x.Quote==null?null: new Hyperlinq(x.Quote.Link, x.Quote.Title),
+				  	Quote = x.Quote==null?null:x.Quote.QuoteQuote,
+				})
+			})
+		})
+		.SelectMany(x => x.Prices)
+		.SelectMany(x => x.Ratings)
+		.Dump("Recently rated", true)
+		.Where(x => x.SuccessRate>0.6)
+		.Dump("Recently rated by analysts with good track record", true);
+		
+		
+		
+	results
+			.Where(r => r.PctLow>0 && r.PctLow*1.5<r.PctHigh)
 			.Dump("Low estimate is greater than zero and high estimate is twice the low estimate");
 	
 }
 
+[Serializable]
+public class MyModel { 
+	
+	public string Symbol { get; set; }
+	public double Price { get; set; }
+	public double EstLow { get; set; }
+	public double EstHigh { get; set; }
+	public double EstAvg { get; set; }
+	public int EstCount { get; set; }
+	public double PctLow { get {return Math.Round((EstLow-Price)/Price*100, 2);} }
+	public double PctHigh { get {return Math.Round((EstHigh-Price)/Price*100, 2);} }
+	public double PctAvg { get {return Math.Round((EstAvg-Price)/Price*100, 2);} }
+	public long FollowerCount {get;set;}
+	public List<MyExpert> Experts {get;set;}
+	
+}
 
-
-List<(string symbol, double lastPrice, double estHigh, long followerCount, double estLow, int NumberOfEstimates)> GetCleanData(List<string> symbols)
+[Serializable]
+public class MyExpert
 {
-	var results = new List<(string symbol, double lastPrice, double estHigh, long followerCount, double estLow, int NumberOfEstimates)>();
+	public double? TargetPrice { get; set; }
+	public double Stars { get; set; }
+	public DateTimeOffset LastUpdated { get; set; }
+	public string Name {get;set;}
+	public string Firm {get;set;}
+	public double SuccessRate { get; set; }
+	public double AvgReturn { get; set; }
+	public long TotalRecomendations { get; set; }
+	public long GoodRecomendations { get; set; }
+	public List<MyRating> Ratings {get;set;}
+	
+}
+
+	[Serializable]
+public class MyRating
+{
+	public DateTimeOffset Date { get; set; }
+	public double? Target {get;set;}
+	public Quote Quote { get; set; }
+	
+}
+	List<MyModel> GetCleanData(List<string> symbols)
+{
+	var results = new List<MyModel>();
 	foreach (var symbol in symbols)
 	{
 		results.Add(Util.Cache(() => { return GetFreshData(symbol); }, symbol));
@@ -107,7 +107,23 @@ List<(string symbol, double lastPrice, double estHigh, long followerCount, doubl
 	return results;
 }
 
-(string symbol, double lastPrice, double estHigh, long followerCount, double estLow, int NumberOfEstimates)  GetFreshData(string symbol)
+List<string> GetSymbolsFromCsv(string filePath)
+{
+	var result = new List<string>();
+	var lines = File.ReadAllLines(filePath);
+	var columnNames = lines.First().Split(',').ToList();
+	var indexOfSymbol = columnNames.IndexOf("Symbol");
+	var i = 0;
+	foreach (var line in lines.Skip(1))
+	{
+		var fields = line.Split(',').ToList();
+		result.Add(fields[indexOfSymbol]);
+	}
+	
+	return result;
+}
+
+	MyModel  GetFreshData(string symbol)
 {
 	var data = GetTipRanksData(symbol).Result;
 	
@@ -121,7 +137,51 @@ List<(string symbol, double lastPrice, double estHigh, long followerCount, doubl
 		highTarget = target.High.Value;
 		lowTarget = data.PtConsensus.Where(pc => pc.Low != null).Average(pc => pc.Low.Value);
 	}
-	return (symbol, lastPrice, highTarget, data.FollowerCount, lowTarget, numberOfEstimates);
+
+	var experts = new List<MyExpert> { };
+	if (data.Experts != null && data.Experts.Any())
+	{
+		foreach (Expert expert in data.Experts.Where(e => e.Ratings.Any(r => r.PriceTarget!=null)))
+		{
+			
+			var myExpert = new MyExpert {
+				AvgReturn=Math.Round(expert.StockAverageReturn, 2),
+				SuccessRate = Math.Round(expert.StockSuccessRate, 2),
+				Firm=expert.Firm,
+				Name = expert.Name,
+				GoodRecomendations=expert.StockGoodRecommendations,
+				Stars = expert.Rankings!=null?expert.Rankings.Select(r => r.Stars).FirstOrDefault():0,
+				TotalRecomendations = expert.StockTotalRecommendations,
+				Ratings = new List<MyRating>()
+			
+			};
+			
+			foreach (var rating in expert.Ratings.OrderByDescending(x=> x.Date))
+			{
+				myExpert.Ratings.Add(new MyRating 
+				{
+					Date = rating.Date,
+					Quote = rating.Quote,
+					Target = rating.PriceTarget
+				});
+			}
+			myExpert.TargetPrice = myExpert.Ratings.Select(r => r.Target).FirstOrDefault();
+			myExpert.LastUpdated = myExpert.Ratings.Select(r => r.Date).FirstOrDefault();
+			experts.Add(myExpert);
+		}
+		
+	}
+	
+	return new MyModel { 
+		Symbol= symbol, 
+		Price= lastPrice, 
+		EstHigh= highTarget, 
+		EstLow = lowTarget,
+		FollowerCount= data.FollowerCount, 
+		EstCount= numberOfEstimates,
+		EstAvg = (highTarget+lowTarget)/2,
+		Experts = experts.OrderByDescending(x=> x.LastUpdated).ToList()
+		};
 }
 
 async Task<Welcome> GetTipRanksData(string symbol)
@@ -491,7 +551,10 @@ async Task<Welcome> GetTipRanksData(string symbol)
 
 		[JsonProperty("newPictureUrl")]
 		public string NewPictureUrl { get; set; }
-	}
+
+		[JsonProperty("quote")]
+		public Quote Quote { get; set; }
+}
 
 	[Serializable]
 	public partial class Ranking
