@@ -8,41 +8,57 @@
 DumpContainer dc = new DumpContainer().Dump();
 void Main()
 {
+		//todo: get current price information from this pattern: https://www.tipranks.com/api/stockInfo/getDetails/?name=AAXN
+		
 	//GetFreshData("FGEN").Dump();
 	//return;
-	
 	var cwd = new FileInfo(Util.CurrentQueryPath).Directory.FullName;
-	var symbols = GetSymbolsFromCsv(cwd + @"\data\watchlist.csv");
-	
+	//LoadPortfolioFromCsv(cwd + @"\data\portfolio.txt");
+	//return;
+	var symbols = GetSymbolsFromCsv(cwd + @"\data\watchlist.csv");//.Take(3).ToList();
+
+
+	//symbols = new List<string> { "TCEHY", "GOOGL", "AMD", "ATVI", "TDOC", "MB", "AAXN", "JD", "SHOP", "AMZN", "SQ", "MSFT", "CALM", "RACE", "DIS", "LL", "FB", "HTHT", "TAL", "MU", "MKC"};
 	var results = new List<MyModel>();
 	results.AddRange(GetCleanData(symbols));
-
-	results
+	//results.Dump("Raw results");
+	results.Where(r => r != null)
 		.Select(r => new {
-			r.Symbol,
-			r.Price,
-			r.EstLow,
-			r.EstHigh,
-			r.EstAvg,
-			r.EstCount,
-			r.PctLow,
-			r.PctHigh,
-			r.PctAvg,
-			r.FollowerCount,
-			LastUpdated = r.Experts.Where(e => e!=null).Select(e => e.LastUpdated).FirstOrDefault(), 
-			MostRecentTarget = r.Experts.Where(e => e!=null && e.Ratings!=null).Select(e => e.Ratings.Select(ra => ra.Target).FirstOrDefault()).FirstOrDefault(), 
+			RecentTgt = r.Experts.Where(e => e!=null && e.TargetPrice!=null).Select(e => e.TargetPrice).FirstOrDefault(), 
+			LastUpdated = r.Experts.Where(e => e!=null && e.TargetPrice!=null).Select(e => e.LastUpdated).FirstOrDefault(), 
+			r
+		})
+		.Select(x => new {
+			x.r.Name,			
+			x.r.Symbol,
+			x.r.Price,
+			x.RecentTgt,
+			x.r.EstLow,
+			x.r.EstHigh,
+			x.r.EstAvg,
+			x.r.EstCount,
+			PctRecentTgt =x.RecentTgt!=null? Math.Round((x.RecentTgt.Value-x.r.Price)/x.r.Price*100, 2):0,
+			x.r.PctLow,
+			x.r.PctHigh,
+			x.r.PctAvg,
+			x.r.FollowerCount,
+			x.LastUpdated,
+			
+			volumeRatio = (x.r.RealTime!=null && x.r.RealTime.avgVol3Months!=0)? Math.Round(ToNumber(x.r.RealTime.volume)/x.r.RealTime.avgVol3Months,2):0,
+			
+			
 		})
 		
 		.Dump("all", true);
 
-
-	results.Where(r => r.Experts.Any(e => e.LastUpdated >= DateTime.Today.AddDays(-30)))
+	var lastUpdatedSince = DateTime.Today.AddDays(-7);
+	results.Where(r => r!=null && r.Experts.Any(e => e.LastUpdated >= lastUpdatedSince))
 		.Select(r => new
 		{
 			
-			Prices = r.Experts.Where(e => e.LastUpdated!=null && e.LastUpdated>=DateTime.Today.AddDays(-30)).Select(e => new {
+			Prices = r.Experts.Where(e => e.LastUpdated!=null && e.LastUpdated>=lastUpdatedSince).Select(e => new {
 				Ratings = e.Ratings.Select(x => new {
-					Symbol=r.Symbol.Dump(),
+					Symbol=r.Symbol,
 					r.Price,
 					e.TargetPrice,
 					e.Stars,
@@ -64,18 +80,46 @@ void Main()
 		.Dump("Recently rated", true)
 		.Where(x => x.SuccessRate>0.6)
 		.Dump("Recently rated by analysts with good track record", true);
-		
-		
-		
-	results
-			.Where(r => r.PctLow>0 && r.PctLow*1.5<r.PctHigh)
-			.Dump("Low estimate is greater than zero and high estimate is twice the low estimate");
+
 	
+	results
+				//.Where(r => r != null && r.PctLow > 0 && r.PctLow * 1.5 < r.PctHigh)
+				.Select(r => new {
+					RecentTgt = r.Experts.Where(e => e!=null && e.TargetPrice!=null).Select(e => e.TargetPrice).FirstOrDefault()??0, 
+					Tgt4StarAvg = r.Experts.Where(e => e!=null && e.TargetPrice!=null).Average(e => e.TargetPrice)?? 0,
+					r})
+				.Select(x => new {
+					x.r.Symbol,
+					x.r.Price,
+					x.RecentTgt,
+					Tgt4StarAvg = Math.Round(x.Tgt4StarAvg,2),
+					x.r.EstLow,
+					x.r.EstHigh,
+					PctRecentTgt = Math.Round((x.RecentTgt-x.r.Price)/x.r.Price*100 , 2),
+					Pct4StarTgt = Math.Round((x.Tgt4StarAvg-x.r.Price)/x.r.Price*100 , 2),
+					x.r.PctLow,
+					x.r.PctHigh,
+					x.r.PctAvg,
+					Experts = x.r.Experts.Select(e => new {
+						e.TargetPrice,
+						e.Stars,
+						e.LastUpdated,
+						Title = e.Ratings.Any()?e.Ratings.Select(y=> y.Quote!=null?new Hyperlinq(y.Quote.Link, y.Quote.Title):null).First():null,
+						e.Name,
+						e.Firm,
+						e.SuccessRate,
+						e.AvgReturn,
+						e.TotalRecomendations
+					})
+				})
+				.OrderByDescending(x=> x.PctAvg)
+				.Dump("with-news", true);
 }
 
 [Serializable]
 public class MyModel { 
-	
+	public PriceData RealTime {get;set;}
+	public string Name {get;set;}
 	public string Symbol { get; set; }
 	public double Price { get; set; }
 	public double EstLow { get; set; }
@@ -114,18 +158,78 @@ public class MyRating
 	public Quote Quote { get; set; }
 	
 }
-	List<MyModel> GetCleanData(List<string> symbols)
+List<MyModel> GetCleanData(List<string> symbols)
 {
 	var results = new List<MyModel>();
 	foreach (var symbol in symbols)
 	{
 		results.Add(Util.Cache(() => { return GetFreshData(symbol); }, symbol));
+//		bool fromCache;
+//		var tempResults =GetFreshData_Cached(symbol).Cache(symbol, out fromCache);
+//		if(fromCache)
+//			("From Cache! " + symbol).Dump();
+//		results.AddRange(tempResults);
 	}
 	return results;
 }
 
+
+
+[Serializable]
+public class Position
+{
+	public string Name {get;set;}
+	public string Symbol {get;set;}
+	public double Price {get;set;}
+	public double PctChange {get;set;}
+	public double InvestedAt {get;set;}
+	public double PctOverallChange {get;set;}
+	public double SharesValue {get;set;}
+	public int NumberOfShares {get;set;}
+}
+
+void LoadPortfolioFromCsv(string filePath)
+{
+	
+	var portfolio = new List<Position>();
+	var result = new List<string>();
+	var lines = File.ReadAllLines(filePath).ToList();
+	var columnNames = lines.First().Split(',').ToList();
+	var indexOfSymbol = columnNames.IndexOf("Symbol");
+	var i = 0;
+	var lineIndex =8;
+	while(lineIndex <= lines.Count-4)
+	{
+		var price = lines[lineIndex+2].Replace("$", "");
+		var pctChange = lines[lineIndex+3].Replace("%", "");
+		var investedAt = lines[lineIndex+4].Replace("$", "");
+		var pctchangeOverall = lines[lineIndex+5].Replace("%", ""); 
+		var sharesValue = lines[lineIndex+6].Replace("$", "");
+		var numberOfShares = lines[lineIndex+7];
+		var position = new Position {
+			Name = lines[lineIndex],
+			Symbol = lines[lineIndex+1],
+			Price =  double.Parse(price),
+			PctChange =  double.Parse(pctChange),
+			InvestedAt =  double.Parse(investedAt),
+			PctOverallChange =  double.Parse(pctchangeOverall),
+			SharesValue =  double.Parse(sharesValue),
+			NumberOfShares =  int.Parse(numberOfShares)
+			
+		};
+		
+		portfolio.Add(position);
+		dc.Content = portfolio;
+		dc.Refresh();
+		lineIndex += 8;
+	}
+	
+	//return result;
+}
+
 List<string> GetSymbolsFromCsv(string filePath)
 {
+	string.Concat("Loading Symbols from: ", filePath).Dump();
 	var result = new List<string>();
 	var lines = File.ReadAllLines(filePath);
 	var columnNames = lines.First().Split(',').ToList();
@@ -140,15 +244,33 @@ List<string> GetSymbolsFromCsv(string filePath)
 	return result;
 }
 
-	MyModel  GetFreshData(string symbol)
+IEnumerable<MyModel> GetFreshData_Cached(string symbol)
 {
-	var data = GetTipRanksData(symbol).Result;
+	var result = new List<MyModel>();
+	result.Add(GetFreshData(symbol));
+	return result.ToArray();
 	
+}
+
+int _freshDataFetchCount;
+MyModel  GetFreshData(string symbol)
+{
+	var temp = GetTipRanksData(symbol);
+	Welcome data = null;
+	
+	if (temp!=null && !temp.IsFaulted)
+		data = temp.Result;
+	
+	if (data == null)
+		return null;
 	var lastPrice = data.Prices.Last().P;
-	dc.Content =  "fetched fresh data for " + symbol + " - last price: " + lastPrice.ToString();
+	var msg = (++_freshDataFetchCount).ToString() + ") fetched fresh data for " + symbol + " - last price: " + lastPrice.ToString();
+	dc.Content =  msg ;
+	//msg.Dump(symbol + " - fetched fresh data");
 	double highTarget = 0.0, lowTarget = 0.0;
 	int numberOfEstimates=data.Experts.Select(x=> x.Ratings.Where(r => r.PriceTarget != null)).Count();
 	var target = data.PtConsensus.Where(pc => pc.High != null).FirstOrDefault();
+	string name = data.CompanyName;
 	if (target != null)
 	{
 		highTarget = target.High.Value;
@@ -158,7 +280,8 @@ List<string> GetSymbolsFromCsv(string filePath)
 	var experts = new List<MyExpert> { };
 	if (data.Experts != null && data.Experts.Any())
 	{
-		foreach (Expert expert in data.Experts.Where(e => e.Ratings.Any(r => r.PriceTarget!=null)))
+		foreach (Expert expert in data.Experts//.Where(e => e.Ratings.Any(r => r.PriceTarget!=null))
+		)
 		{
 			
 			var myExpert = new MyExpert {
@@ -189,7 +312,8 @@ List<string> GetSymbolsFromCsv(string filePath)
 		
 	}
 	
-	return new MyModel { 
+	var model= new MyModel { 
+		Name = name,
 		Symbol= symbol, 
 		Price= lastPrice, 
 		EstHigh= highTarget, 
@@ -199,6 +323,19 @@ List<string> GetSymbolsFromCsv(string filePath)
 		EstAvg = (highTarget+lowTarget)/2,
 		Experts = experts.OrderByDescending(x=> x.LastUpdated).ToList()
 		};
+		
+	
+	AddRealTimeDataToModel(model);
+	
+	return model;
+}
+
+void AddRealTimeDataToModel(MyModel model)
+{
+	model.RealTime = GetPriceData(model.Symbol).Result.FirstOrDefault();
+	if(model.RealTime!=null)
+		model.Price = model.RealTime.price;
+		
 }
 
 async Task<Welcome> GetTipRanksData(string symbol)
@@ -206,23 +343,49 @@ async Task<Welcome> GetTipRanksData(string symbol)
 	//sample api call result: https://www.tipranks.com/api/stocks/getData/?name=AAXN&benchmark=1&period=3&break=1521390728236
 	var url = "https://www.tipranks.com/api/stocks/getData/?name=" + symbol + "&benchmark=1&period=3&break=1521390728236";
 
-
 	using (var client = new System.Net.Http.HttpClient())
 	{
-//		var values = new Dictionary<string, string>
-//			{
-//				{ "text1", str1 },
-//				{ "text2", str2 }
-//			};
-//		var content = new System.Net.Http.FormUrlEncodedContent(values);
 		var response = client.GetAsync(url);
-		var responseString = await response.Result.Content.ReadAsStringAsync();
+		try
+		{
+			var responseString = await response.Result.Content.ReadAsStringAsync();
+			var data = Welcome.FromJson(responseString);
+			
+			return data;
 
-		var data = Welcome.FromJson(responseString);
-		return data;
+		}
+		catch {
+			string.Concat("There was an error getting symbol data for ", symbol).Dump();
+			return null;
+		};
+		
 	}
 
 }
+
+async Task<List<PriceData>> GetPriceData(string symbol)
+{
+	//https://www.tipranks.com/api/stockInfo/getDetails/?name=AAXN
+	var url = "https://www.tipranks.com/api/stockInfo/getDetails/?name=" + symbol;
+	using (var client = new System.Net.Http.HttpClient())
+	{
+		var response = client.GetAsync(url);
+
+		try
+		{
+			var responseString = await response.Result.Content.ReadAsStringAsync();
+			var data = Newtonsoft.Json.JsonConvert.DeserializeObject<List<PriceData>>(responseString);
+			return data;
+
+		}
+		catch
+		{
+			string.Concat("There was an error getting price data for ", symbol).Dump();
+			return null;
+		}
+	}
+}
+
 
 // To parse this JSON data, add NuGet 'Newtonsoft.Json' then do:
 //
@@ -1076,3 +1239,55 @@ async Task<Welcome> GetTipRanksData(string symbol)
 			},
 		};
 	}
+
+
+[Serializable]
+public class PriceData
+{
+	public string yLow { get; set; }
+	public string ticker { get; set; }
+	public string pe { get; set; }
+	public string marketCap { get; set; }
+	public string openPrice { get; set; }
+	public string eps { get; set; }
+	public string divPerYield { get; set; }
+	public string fiscalDiv { get; set; }
+	public string beta { get; set; }
+	public string shares { get; set; }
+	public string market { get; set; }
+	public string instOwn { get; set; }
+	public string low { get; set; }
+	public string high { get; set; }
+	public double price { get; set; }
+	public double yHigh { get; set; }
+	public string range { get; set; }
+	public double changeAmount { get; set; }
+	public double changePercent { get; set; }
+	public string average { get; set; }
+	public string volume { get; set; }
+	public string prevClose { get; set; }
+	public string bid { get; set; }
+	public string ask { get; set; }
+	public string oneYearTargetEst { get; set; }
+	public string nextEarningDate { get; set; }
+	public string daysRange { get; set; }
+	public string range52Weeks { get; set; }
+	public string low52Weeks { get; set; }
+	public string high52Weeks { get; set; }
+	public double avgVol3Months { get; set; }
+	public string exchangeRate { get; set; }
+	public double parsedPrice { get; set; }
+}
+
+double ToNumber(string priceStr)
+{
+	double price;
+	double.TryParse(priceStr.Replace("M", ""), out price);
+
+	if (priceStr.Contains("M"))
+	{
+		price *= 10E6;
+	}
+
+	return price;
+}
